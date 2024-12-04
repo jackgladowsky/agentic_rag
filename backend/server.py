@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from docling.document_converter import DocumentConverter
 from pydantic import BaseModel
 from rag_engine import RAGEngine
 import os
@@ -66,7 +67,7 @@ async def chat(request: ChatRequest):
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
     """
-    Upload documents to the knowledge base
+    Upload documents to the knowledge base. Supports various document types through docling parsing.
     
     Args:
         files: List of files to upload
@@ -76,12 +77,13 @@ async def upload_files(files: List[UploadFile] = File(...)):
     """
     try:
         processed_files = []
+        converter = DocumentConverter()
         
         for file in files:
             logger.info(f"Processing file: {file.filename}")
             
             # Create a temporary file to store the upload
-            with tempfile.NamedTemporaryFile(delete=False, mode='wb') as temp_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
                 # Write the uploaded file content to temp file
                 content = await file.read()
                 temp_file.write(content)
@@ -89,18 +91,19 @@ async def upload_files(files: List[UploadFile] = File(...)):
                 
                 logger.info(f"Temporary file created at: {temp_file.name}")
                 
-                # Read the content
                 try:
-                    with open(temp_file.name, 'r', encoding='utf-8') as f:
-                        file_content = f.read()
-                        logger.info(f"File content read: {file_content[:100]}...")  # Log first 100 chars
+                    # Use DocumentConverter to parse the document
+                    result = converter.convert(temp_file.name)
+                    parsed_content = result.document.export_to_markdown()
+                    logger.info(f"Parsed content preview: {parsed_content[:100]}...")
                 
                     # Add to ChromaDB through RAG engine
                     rag_engine.add_document(
-                        content=file_content,
+                        content=parsed_content,
                         metadata={
                             "filename": file.filename,
-                            "content_type": file.content_type
+                            "content_type": file.content_type,
+                            "parser": "docling"
                         }
                     )
                     
@@ -114,7 +117,6 @@ async def upload_files(files: List[UploadFile] = File(...)):
                 finally:
                     # Clean up temp file
                     os.unlink(temp_file.name)
-        
         return {
             "message": f"Successfully processed {len(processed_files)} files",
             "processed_files": processed_files,
