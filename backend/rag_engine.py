@@ -173,6 +173,33 @@ class RAGEngine:
             logger.error(f"Query that caused error: {query}")
             raise
 
+    def add_document(self, content: str, metadata: dict = None) -> None:
+        """
+        Add a new document to the ChromaDB collection.
+        
+        Args:
+            content: The text content of the document
+            metadata: Optional metadata about the document
+        """
+        try:
+            # Generate a unique ID for the document
+            doc_id = f"doc_{self.collection.count()}"
+
+            logger.info(f"Adding document content: {content}")
+            
+            # Add the document to ChromaDB
+            self.collection.add(
+                documents=[content],
+                ids=[doc_id],
+                metadatas=[metadata or {}]
+            )
+            
+            logger.info(f"Successfully added document {doc_id} to collection")
+            
+        except Exception as e:
+            logger.error(f"Error adding document to collection: {e}")
+            raise
+
     def get_response(self, query: str) -> Dict[str, Any]:
         """
         Get a structured reasoning response for the given query.

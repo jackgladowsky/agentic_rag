@@ -1,10 +1,17 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from rag_engine import RAGEngine
 import os
 import json
+import shutil
+from typing import List
+import tempfile
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Check for OpenAI API key
 if not os.getenv("OPENAI_API_KEY"):
@@ -54,6 +61,68 @@ async def chat(request: ChatRequest):
         return response
         
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/upload")
+async def upload_files(files: List[UploadFile] = File(...)):
+    """
+    Upload documents to the knowledge base
+    
+    Args:
+        files: List of files to upload
+        
+    Returns:
+        JSON response with status and number of files processed
+    """
+    try:
+        processed_files = []
+        
+        for file in files:
+            logger.info(f"Processing file: {file.filename}")
+            
+            # Create a temporary file to store the upload
+            with tempfile.NamedTemporaryFile(delete=False, mode='wb') as temp_file:
+                # Write the uploaded file content to temp file
+                content = await file.read()
+                temp_file.write(content)
+                temp_file.flush()
+                
+                logger.info(f"Temporary file created at: {temp_file.name}")
+                
+                # Read the content
+                try:
+                    with open(temp_file.name, 'r', encoding='utf-8') as f:
+                        file_content = f.read()
+                        logger.info(f"File content read: {file_content[:100]}...")  # Log first 100 chars
+                
+                    # Add to ChromaDB through RAG engine
+                    rag_engine.add_document(
+                        content=file_content,
+                        metadata={
+                            "filename": file.filename,
+                            "content_type": file.content_type
+                        }
+                    )
+                    
+                    processed_files.append(file.filename)
+                    logger.info(f"Successfully processed {file.filename}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing file content: {e}")
+                    raise
+                
+                finally:
+                    # Clean up temp file
+                    os.unlink(temp_file.name)
+        
+        return {
+            "message": f"Successfully processed {len(processed_files)} files",
+            "processed_files": processed_files,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.exception_handler(HTTPException)

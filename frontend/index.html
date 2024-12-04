@@ -252,6 +252,106 @@
 <body>
     <div class="container">
         <div class="chat-container" id="chatContainer"></div>
+        <!-- Add this right after the chat-container div -->
+<div class="file-upload-container">
+    <input type="file" id="fileInput" accept=".txt,.pdf,.doc,.docx" multiple style="display: none;" />
+    <button id="uploadButton" class="upload-btn">
+        <span class="upload-icon">📁</span> Upload Documents
+    </button>
+    <div id="uploadStatus" class="upload-status"></div>
+</div>
+
+<!-- Add this CSS in the existing <style> section -->
+<style>
+    .file-upload-container {
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .upload-btn {
+        background: #4CAF50;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .upload-btn:hover {
+        background: #45a049;
+    }
+
+    .upload-icon {
+        font-size: 1.2em;
+    }
+
+    .upload-status {
+        color: #666;
+        font-size: 0.9em;
+    }
+
+    .upload-progress {
+        height: 4px;
+        background: #e0e0e0;
+        border-radius: 2px;
+        margin-top: 5px;
+        overflow: hidden;
+    }
+
+    .upload-progress-bar {
+        height: 100%;
+        background: #4CAF50;
+        width: 0%;
+        transition: width 0.3s ease;
+    }
+</style>
+
+<!-- Add this JavaScript before the existing script's closing tag -->
+<script>
+    // Add these constants with the other ones at the top
+    const fileInput = document.getElementById('fileInput');
+    const uploadButton = document.getElementById('uploadButton');
+    const uploadStatus = document.getElementById('uploadStatus');
+
+    // Add the file upload handling functions
+    async function handleFileUpload(files) {
+        const formData = new FormData();
+        for (let file of files) {
+            formData.append('files', file);
+        }
+
+        uploadStatus.innerHTML = `Uploading ${files.length} file(s)...`;
+        
+        try {
+            const response = await fetch('http://localhost:8000/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                uploadStatus.innerHTML = `Successfully uploaded ${files.length} file(s)!`;
+                setTimeout(() => {
+                    uploadStatus.innerHTML = '';
+                }, 3000);
+            } else {
+                throw new Error(result.error || 'Upload failed');
+            }
+        } catch (error) {
+            uploadStatus.innerHTML = `Error: ${error.message}`;
+        }
+    }
+
+    // Add these event listeners with the other ones
+    uploadButton.addEventListener('click', () => fileInput.click());
+    
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileUpload(e.target.files);
+        }
+    });
+</script>
         <div class="input-container">
             <input type="text" id="userInput" placeholder="Type your message..." />
             <button id="sendButton">Send</button>
