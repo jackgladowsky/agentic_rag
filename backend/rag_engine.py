@@ -1,4 +1,6 @@
 from typing import List, Dict, Any
+import chromadb
+import chromadb.utils.embedding_functions as embedding_functions
 import numpy as np
 import json
 import os
@@ -6,7 +8,6 @@ import logging
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from embeddings import cosine_similarity, embed_texts
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,7 @@ load_dotenv()
 # Constants
 DEFAULT_MODEL = "gpt-4o-mini"
 AGENT_LOOP_LIMIT = 3
+
 
 class RAGEngine:
     """
@@ -38,19 +40,26 @@ class RAGEngine:
         # Configuration
         self.model = os.getenv('OPENAI_MODEL', DEFAULT_MODEL)
         self.agent_loop_limit = AGENT_LOOP_LIMIT
-        
-        # Sample data - in production this would come from a database
-        self.data = [
-            "Python is a versatile programming language used for web development, data analysis, and more.",
-            "OpenAI provides advanced AI models like GPT-4 that support function calling.",
-            "Function calling allows external tools to be integrated seamlessly into chatbots.",
-            "Machine learning is a subset of artificial intelligence that focuses on building algorithms.",
-            "The Turing test is a benchmark for evaluating an AI's ability to mimic human intelligence.",
-            "Transformers are a type of neural network architecture that powers modern AI systems.",
-            "Kotlin is a modern programming language, widely used for Android app development.",
-            "Docker and Kubernetes are essential tools for containerized application deployment.",
-        ]
-        
+
+
+        self.openai_ef = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=os.getenv('OPENAI_API_KEY'),
+            model_name=os.getenv('OPENAI_EMBEDDING_MODEL'),
+            )
+
+        self.chroma_client = chromadb.PersistentClient(path="./chroma_db")
+        try:
+            self.collection = self.chroma_client.get_collection("knowledge_base", embedding_function=self.openai_ef)
+            logger.info("Loaded existing knowledge base collection")
+        except:
+            self.collection = self.chroma_client.create_collection(
+                name="knowledge_base",
+                metadata={"hnsw:space": "cosine"},
+                embedding_function=self.openai_ef
+            )
+            logger.info("Created new knowledge base collection")
+            self.initialize_knowledge_base()  # Only initialize if new collection
+
         # Tool definitions
         self.tools = [
             {
@@ -103,9 +112,34 @@ class RAGEngine:
             }
         ]
 
+    def initialize_knowledge_base(self) -> None:
+        """Initialize the knowledge base with sample data."""
+        data = [
+            "Python is a versatile programming language used for web development, data analysis, and more.",
+            "OpenAI provides advanced AI models like GPT-4 that support function calling.",
+            "Function calling allows external tools to be integrated seamlessly into chatbots.",
+            "Machine learning is a subset of artificial intelligence that focuses on building algorithms.",
+        ]
+
+        try:
+            self.collection.add(
+                documents=data,
+                ids=[str(i) for i in range(len(data))],
+                metadatas=[{"source": "sample_data"} for _ in data]
+            )
+            logger.info(f"Successfully initialized knowledge base with {len(data)} documents")
+            
+            # Verify the data was added
+            count = self.collection.count()
+            logger.info(f"Collection now contains {count} documents")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize knowledge base: {e}")
+            raise
+
     def retrieve_context(self, query: str) -> str:
         """
-        Retrieve the most relevant context for the given query using embedding similarity.
+        Retrieve the most relevant context using ChromaDB.
         
         Args:
             query (str): The user's query to find relevant context for
@@ -114,18 +148,29 @@ class RAGEngine:
             str: The most relevant context from the knowledge base
         """
         try:
-            data_embeddings = embed_texts(self.data)
-            query_embedding = embed_texts([query])[0].reshape(1, -1)
+            # Add logging to check collection status
+            count = self.collection.count()
+            logger.info(f"Current collection size: {count} documents")
             
-            similarities = [
-                cosine_similarity(query_embedding, data_embedding.reshape(1, -1)) 
-                for data_embedding in data_embeddings
-            ]
+            # Query ChromaDB for the most similar document
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=min(3, max(1, count))  # Get up to 3 results if available
+            )
             
-            most_relevant_idx = np.argmax(similarities)
-            return self.data[most_relevant_idx]
+            # Log the results for debugging
+            logger.info(f"Query results: {results}")
+            
+            # Return the most relevant documents concatenated
+            if results['documents'] and results['documents'][0]:
+                contexts = results['documents'][0]
+                return " ".join(contexts)
+            else:
+                logger.warning("No documents found in query results")
+                return "" 
         except Exception as e:
             logger.error(f"Error retrieving context: {e}")
+            logger.error(f"Query that caused error: {query}")
             raise
 
     def get_response(self, query: str) -> Dict[str, Any]:
@@ -163,6 +208,7 @@ class RAGEngine:
                     })
                     
                     context = self.retrieve_context(arguments.get("query", query))
+                    logger.info(f"Retrieved context: {context}")
                     tool_call_results_message.append({
                         "role": "tool",
                         "content": context,

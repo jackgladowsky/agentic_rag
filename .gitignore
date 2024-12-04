@@ -4,6 +4,7 @@
 !.env.sample
 
 backend/__pycache__/
+backend/chroma_db/
 
 # Python
 __pycache__/
