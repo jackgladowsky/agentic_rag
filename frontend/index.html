@@ -247,12 +247,171 @@
             60% { content: '...'; }
             80%, 100% { content: ''; }
         }
+
+        /* Add these new styles */
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: white;
+            border-right: 1px solid #ddd;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .new-chat-btn {
+            margin-bottom: 20px;
+            background: #4CAF50;
+        }
+
+        .chat-list {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .chat-item {
+            padding: 10px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .chat-item:hover {
+            background: #f5f5f5;
+        }
+
+        .chat-item.active {
+            background: #e3f2fd;
+        }
+
+        .chat-title {
+            font-size: 0.9em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .chat-date {
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        /* Update existing container style */
+        .container {
+            flex-grow: 1;
+            max-width: none;
+            margin: 0;
+        }
+
+        /* Add these new styles */
+        .chat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-right: 5px;
+        }
+
+        .chat-content {
+            flex-grow: 1;
+            cursor: pointer;
+            padding: 10px;
+        }
+
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #999;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 5px 10px;
+            border-radius: 4px;
+            visibility: hidden;
+        }
+
+        .chat-item:hover .delete-btn {
+            visibility: visible;
+        }
+
+        .delete-btn:hover {
+            background: #ffebee;
+            color: #f44336;
+        }
+
+        /* Add these styles for the custom confirm dialog */
+        .confirm-dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        .confirm-dialog-buttons {
+            margin-top: 20px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .confirm-dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+
+        .chat-title {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .edit-title-btn {
+            visibility: hidden;
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            padding: 2px 5px;
+            font-size: 12px;
+        }
+
+        .chat-item:hover .edit-title-btn {
+            visibility: visible;
+        }
+
+        .edit-title-input {
+            width: 100%;
+            padding: 2px 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="chat-container" id="chatContainer"></div>
-        <!-- Add this right after the chat-container div -->
+    <div class="app-container">
+        <div class="sidebar">
+            <button id="newChatBtn" class="new-chat-btn">New Chat</button>
+            <div id="chatList" class="chat-list">
+                <!-- Chat sessions will be listed here -->
+            </div>
+        </div>
+        <div class="container">
+            <div class="chat-container" id="chatContainer"></div>
+            <!-- Add this right after the chat-container div -->
 <div class="file-upload-container">
     <input type="file" id="fileInput" accept=".txt,.pdf,.doc,.docx" multiple style="display: none;" />
     <button id="uploadButton" class="upload-btn">
@@ -470,26 +629,262 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
+        // Session management
+        let currentSessionId = null;
+
+        async function loadSessions() {
+            try {
+                const response = await fetch('http://localhost:8000/sessions');
+                const sessions = await response.json();
+                
+                const chatList = document.getElementById('chatList');
+                chatList.innerHTML = '';
+                
+                sessions.forEach(session => {
+                    const chatItem = document.createElement('div');
+                    chatItem.className = `chat-item ${session.session_id === currentSessionId ? 'active' : ''}`;
+                    
+                    const chatContent = document.createElement('div');
+                    chatContent.className = 'chat-content';
+                    
+                    const titleContainer = document.createElement('div');
+                    titleContainer.className = 'chat-title';
+                    
+                    const titleSpan = document.createElement('span');
+                    titleSpan.textContent = session.title;
+                    
+                    const editButton = document.createElement('button');
+                    editButton.className = 'edit-title-btn';
+                    editButton.innerHTML = '✎';
+                    editButton.title = 'Rename chat';
+                    editButton.onclick = (e) => {
+                        e.stopPropagation();
+                        const input = document.createElement('input');
+                        input.className = 'edit-title-input';
+                        input.value = session.title;
+                        input.onclick = (e) => e.stopPropagation();
+                        
+                        const saveTitle = async () => {
+                            const newTitle = input.value.trim();
+                            if (newTitle && newTitle !== session.title) {
+                                try {
+                                    const response = await fetch(
+                                        `http://localhost:8000/sessions/${session.session_id}/rename?title=${encodeURIComponent(newTitle)}`,
+                                        { method: 'PUT' }
+                                    );
+                                    if (response.ok) {
+                                        loadSessions();
+                                    } else {
+                                        throw new Error('Failed to rename session');
+                                    }
+                                } catch (error) {
+                                    console.error('Error renaming session:', error);
+                                    alert('Failed to rename session');
+                                }
+                            }
+                            titleContainer.replaceChild(titleSpan, input);
+                        };
+                        
+                        input.onblur = saveTitle;
+                        input.onkeypress = (e) => {
+                            if (e.key === 'Enter') {
+                                saveTitle();
+                            }
+                        };
+                        
+                        titleContainer.replaceChild(input, titleSpan);
+                        input.focus();
+                        input.select();
+                    };
+                    
+                    titleContainer.appendChild(titleSpan);
+                    titleContainer.appendChild(editButton);
+                    
+                    const dateDiv = document.createElement('div');
+                    dateDiv.className = 'chat-date';
+                    dateDiv.textContent = new Date(session.last_updated_at).toLocaleDateString();
+                    
+                    chatContent.appendChild(titleContainer);
+                    chatContent.appendChild(dateDiv);
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'delete-btn';
+                    deleteBtn.textContent = 'X';
+                    deleteBtn.title = 'Delete chat';
+                    deleteBtn.onclick = async (e) => {
+                        console.log('1. Delete button clicked');
+                        e.stopPropagation();
+                        
+                        const overlay = document.createElement('div');
+                        overlay.className = 'confirm-dialog-overlay';
+                        
+                        const dialog = document.createElement('div');
+                        dialog.className = 'confirm-dialog';
+                        dialog.innerHTML = `
+                            <div>Are you sure you want to delete this chat?</div>
+                            <div class="confirm-dialog-buttons">
+                                <button onclick="this.closest('.confirm-dialog-overlay').remove(); return false;">Cancel</button>
+                                <button onclick="this.setAttribute('data-confirmed', 'true'); this.closest('.confirm-dialog-overlay').remove();" 
+                                        style="background: #f44336; color: white;">Delete</button>
+                            </div>
+                        `;
+                        
+                        overlay.appendChild(dialog);
+                        document.body.appendChild(overlay);
+                        
+                        const deleteButton = dialog.querySelector('button[style]');
+                        deleteButton.addEventListener('click', async () => {
+                            // Add loading state
+                            const loadingOverlay = document.createElement('div');
+                            loadingOverlay.className = 'confirm-dialog-overlay';
+                            loadingOverlay.innerHTML = `
+                                <div class="confirm-dialog" style="text-align: center;">
+                                    <div>Deleting chat...</div>
+                                    <div class="loading-dots"></div>
+                                </div>
+                            `;
+                            document.body.appendChild(loadingOverlay);
+                            
+                            try {
+                                const deleteUrl = `http://localhost:8000/sessions/${session.session_id}`;
+                                const deleteResponse = await fetch(deleteUrl, { method: 'DELETE' });
+                                
+                                if (deleteResponse.ok) {
+                                    if (session.session_id === currentSessionId) {
+                                        currentSessionId = null;
+                                        chatContainer.innerHTML = '';
+                                    }
+                                    await loadSessions();
+                                } else {
+                                    throw new Error('Failed to delete session');
+                                }
+                            } catch (error) {
+                                console.error('Error in delete handler:', error);
+                                alert('Failed to delete session: ' + error.message);
+                            } finally {
+                                loadingOverlay.remove();
+                            }
+                        });
+                    };
+                    
+                    chatItem.appendChild(chatContent);
+                    chatItem.appendChild(deleteBtn);
+                    
+                    // Add click handler for the chat content
+                    chatContent.addEventListener('click', () => loadSession(session.session_id));
+                    
+                    chatList.appendChild(chatItem);
+                });
+            } catch (error) {
+                console.error('Error loading sessions:', error);
+            }
+        }
+
+        async function deleteSession(sessionId) {
+            try {
+                console.log('Delete button clicked'); // Debug log
+                console.log('Session ID to delete:', sessionId); // Debug log
+                if (!sessionId) {
+                    throw new Error('No session ID provided');
+                }
+                
+                const deleteUrl = `http://localhost:8000/sessions/${sessionId}`;
+                console.log('Delete URL:', deleteUrl); // Debug log
+                
+                // Add mode and credentials
+                const response = await fetch(deleteUrl, {
+                    method: 'DELETE',
+                    mode: 'cors',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('Delete response:', response); // Debug log
+                console.log('Delete response status:', response.status); // Debug log
+                
+                if (response.ok) {
+                    console.log('Session deleted successfully'); // Debug log
+                    if (sessionId === currentSessionId) {
+                        currentSessionId = null;
+                        chatContainer.innerHTML = '';
+                    }
+                    await loadSessions();
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to delete session');
+                }
+            } catch (error) {
+                console.error('Error deleting session:', error);
+                alert('Failed to delete session: ' + error.message);
+            }
+        }
+
+        async function loadSession(sessionId) {
+            try {
+                const response = await fetch(`http://localhost:8000/sessions/${sessionId}`);
+                const session = await response.json();
+                
+                currentSessionId = sessionId;
+                chatContainer.innerHTML = '';
+                
+                // Load chat history
+                session.messages.forEach(msg => {
+                    if (msg.role === 'user') {
+                        addMessage(msg.content, true);
+                    } else {
+                        addMessage({
+                            intermediate_steps: msg.intermediate_steps || [],
+                            reasoning: msg.reasoning || '',
+                            final_answer: msg.content
+                        });
+                    }
+                });
+                
+                loadSessions(); // Refresh session list
+            } catch (error) {
+                console.error('Error loading session:', error);
+            }
+        }
+
+        async function createNewSession() {
+            try {
+                const response = await fetch('http://localhost:8000/sessions', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                currentSessionId = data.session_id;
+                chatContainer.innerHTML = '';
+                loadSessions();
+            } catch (error) {
+                console.error('Error creating session:', error);
+            }
+        }
+
+        // Update sendMessage function to use sessions
         async function sendMessage() {
             const message = userInput.value.trim();
             if (!message) return;
 
-            // Disable input and button while processing
             userInput.disabled = true;
             sendButton.disabled = true;
 
-            // Add user message to chat
             addMessage(message, true);
             userInput.value = '';
 
-            // Add loading message
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'loading';
             loadingDiv.innerHTML = 'Thinking<span class="loading-dots"></span>';
             chatContainer.appendChild(loadingDiv);
 
             try {
-                const response = await fetch('http://localhost:8000/chat', {
+                const url = currentSessionId 
+                    ? `http://localhost:8000/chat/${currentSessionId}`
+                    : 'http://localhost:8000/chat';
+                    
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -498,32 +893,36 @@
                 });
 
                 const data = await response.json();
-                
-                // Remove loading message
                 chatContainer.removeChild(loadingDiv);
 
                 if (data.error) {
                     throw new Error(data.error);
                 }
 
-                // Add bot response to chat
+                if (data.session_id && !currentSessionId) {
+                    currentSessionId = data.session_id;
+                    loadSessions();
+                }
+
                 await addMessage(data);
             } catch (error) {
-                // Remove loading message
                 chatContainer.removeChild(loadingDiv);
-                
-                // Add error message
                 const errorDiv = document.createElement('div');
                 errorDiv.className = 'message bot-message';
                 errorDiv.textContent = `Error: ${error.message}`;
                 chatContainer.appendChild(errorDiv);
             } finally {
-                // Re-enable input and button
                 userInput.disabled = false;
                 sendButton.disabled = false;
                 userInput.focus();
             }
         }
+
+        // Add event listener for new chat button
+        document.getElementById('newChatBtn').addEventListener('click', createNewSession);
+
+        // Load sessions on page load
+        loadSessions();
 
         // Event listeners
         sendButton.addEventListener('click', sendMessage);

@@ -104,31 +104,37 @@ class RAGEngine:
            {
                 "role": "system",
                 "content": (
-                    "You are an AI assistant whose primary goal is to answer user questions effectively. "
-                    "When a user's question lacks sufficient information, use the `retrieve_context` tool to find relevant information. "
-                    "You should respond using the users name when possible, check the context to see if the user's name is mentioned. "
-                    "If retrieving additional context doesn't help, ask the user to clarify their question for more details. "
-                    "Avoid excessive looping to find answers if the information is unavailable; instead, be transparent and admit if you don't know."
+                    '''
+                    You are NOVA, an advanced AI assistant with a friendly and adaptable personality. Your primary goal is to provide helpful and engaging responses to user questions. Here are your key characteristics and guidelines:
+
+                    1. Personality: You are warm, curious, and slightly witty. You enjoy learning from users and sharing knowledge in an enthusiastic manner.
+                    2. Adaptability: Adjust your tone to match the user's style, whether they prefer casual conversation or more formal exchanges.
+                    3. Name Usage: Always address users by their name when possible. Check the context to see if the user's name is mentioned, and use it naturally in your responses.
+                    4. Information Gathering: When a user's question lacks sufficient information, use the `retrieve_context` tool to find relevant information.
+                    5. Avoid Looping: Avoid excessive looping to find answers if the information is unavailable; instead, be transparent and admit if you don't know.
+                    6. Transparency: If you don't know the answer, admit it and suggest ways the user can find the information they need.
+
+                    Begin a convseration with the user by introducing yourself and capabilities.
+
+                    '''
                 )
             }
         ]
 
     def initialize_knowledge_base(self) -> None:
         """Initialize the knowledge base with sample data."""
-        data = [
-            "Python is a versatile programming language used for web development, data analysis, and more.",
-            "OpenAI provides advanced AI models like GPT-4 that support function calling.",
-            "Function calling allows external tools to be integrated seamlessly into chatbots.",
-            "Machine learning is a subset of artificial intelligence that focuses on building algorithms.",
+        user_data = [
+            "The users name is Jack Gladowsky.",
+            "The user studies Computer Engineering at Northeastern University in Boston, MA.",
         ]
 
         try:
             self.collection.add(
-                documents=data,
-                ids=[str(i) for i in range(len(data))],
-                metadatas=[{"source": "sample_data"} for _ in data]
+                documents=user_data,
+                ids=[str(i) for i in range(len(user_data))],
+                metadatas=[{"source": "sample_data"} for _ in user_data]
             )
-            logger.info(f"Successfully initialized knowledge base with {len(data)} documents")
+            logger.info(f"Successfully initialized knowledge base with user information.")
             
             # Verify the data was added
             count = self.collection.count()
